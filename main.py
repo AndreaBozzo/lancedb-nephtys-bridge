@@ -1,45 +1,38 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 import nats
 import lancedb
 from lancedb.pydantic import LanceModel, Vector
 from lancedb.embeddings import get_registry
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nephtys-bridge")
 
-# 1. Define the LanceDB model with automatic embedding
-# We use a lightweight and fast HuggingFace model
 model = get_registry().get("sentence-transformers").create(name="all-MiniLM-L6-v2")
 
+if TYPE_CHECKING:
+    EmbeddingVector = list[float]
+else:
+    EmbeddingVector = Vector(model.ndims())
+
 class NephtysEvent(LanceModel):
-    # The ID of the Nephtys source (e.g., "hackernews_poller")
     source_id: str 
-    # The original timestamp assigned by Nephtys at ingestion
     timestamp: int 
-    # The text extracted from the payload
     text: str = model.SourceField() 
-    # The vector automatically calculated by LanceDB
-    vector: Vector = model.VectorField()
+    vector: EmbeddingVector = model.VectorField()
 
 async def main():
-    # 2. Connect to LanceDB(local file-based for simplicity)
     db = lancedb.connect("./data/nephtys_lancedb")
     
-    # Create table if it doesn't exist, otherwise open it
     table_name = "live_streams"
     if table_name not in db.table_names():
         table = db.create_table(table_name, schema=NephtysEvent)
-        logger.info(f"LanceDB table '{table_name}' created.")
     else:
         table = db.open_table(table_name)
-        logger.info(f"LanceDB table '{table_name}' opened.")
 
-    # 3. Connect to NATS (where Nephtys publishes)
     nc = await nats.connect("nats://localhost:4222")
     js = nc.jetstream()
     
@@ -53,40 +46,37 @@ async def main():
             timestamp = data.get("timestamp", 0)
             payload = data.get("payload", {})
             
-            # Assume the payload contains a 'text' field or extract it
-            # (In a real-world scenario, you would adapt this based on the API Nephtys is querying)
-            text_content = payload.get("text", "")
+            title = payload.get("title", "")
+            comment = payload.get("comment", "")
+            user = payload.get("user", "")
+            bot = payload.get("bot", False)
             
-            if not text_content:
+            if not title or bot:
                 await msg.ack()
                 return
 
-            # 4. APPEND TO LANCEDB
-            # Create the Pydantic object. LanceDB will handle calling
-            # the local model and generating the embedding in the background!
+            text_content = f"L'utente {user} ha modificato la pagina '{title}'. Commento: {comment}"
+            vector = model.compute_source_embeddings(text_content)[0]
+
             record = NephtysEvent(
                 source_id=source_id,
                 timestamp=timestamp,
-                text=text_content
+                text=text_content,
+                vector=vector,
             )
             
-            # LanceDB shines here: fast columnar appends
             table.add([record])
             
-            logger.info(f"Saved to LanceDB: [{source_id}] {text_content[:30]}...")
+            logger.info(f"[{source_id}] {text_content[:60]}...")
             
-            # Confirm to JetStream that the message has been processed
             await msg.ack()
             
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            logger.error(e)
 
-    # Push subscription to JetStream
     sub = await js.subscribe(stream_topic, cb=message_handler)
-    logger.info(f"Listening on {stream_topic}...")
 
     try:
-        # Keep the loop alive
         while True:
             await asyncio.sleep(1)
     except KeyboardInterrupt:
@@ -96,5 +86,4 @@ async def main():
         await nc.drain()
 
 if __name__ == '__main__':
-    # Run the consumer with uvicorn or directly with asyncio
     asyncio.run(main())
