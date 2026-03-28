@@ -1,0 +1,28 @@
+{
+  "id": "wiki_live_edits",
+  "kind": "sse",
+  "url": "https://stream.wikimedia.org/v2/stream/recentchange",
+  "topic": "nephtys.stream.wiki",
+  "sse": {
+    "headers": {
+      "User-Agent": "nephtys/1.0 (andrea local dev)",
+      "Accept": "text/event-stream"
+    }
+  },
+  "pipeline": {
+    "filter": { "match_types": ["message"] },
+    "transform": {
+      "mapping": {
+        "title": "title",
+        "user": "user",
+        "comment": "comment",
+        "bot": "bot"
+      }
+    },
+    "batch": {
+      "enabled": true,
+      "max_batch_size": 20,
+      "flush_interval": "2s"
+    }
+  }
+}

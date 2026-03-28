@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import nats
@@ -19,17 +20,37 @@ else:
     EmbeddingVector = Vector(model.ndims())
 
 class NephtysEvent(LanceModel):
-    source_id: str 
-    timestamp: int 
-    text: str = model.SourceField() 
+    source_id: str
+    timestamp: int
+    text: str = model.SourceField()
     vector: EmbeddingVector = model.VectorField()
+
+
+def _normalize_timestamp_ms(ts_value: int | float | str | None) -> int:
+    """Return a sane epoch timestamp in milliseconds for storage."""
+    now_ms = int(time.time() * 1000)
+    if ts_value is None:
+        return now_ms
+
+    try:
+        ts_int = int(ts_value)
+    except (TypeError, ValueError):
+        return now_ms
+
+    # Guard against empty/invalid values and convert seconds to milliseconds.
+    if ts_int <= 0:
+        return now_ms
+    if ts_int < 10_000_000_000:
+        return ts_int * 1000
+    return ts_int
 
 
 async def main():
     db = lancedb.connect("./data/nephtys_lancedb")
 
     table_name = "live_streams"
-    if table_name not in db.list_tables():
+    existing_tables = db.list_tables().tables
+    if table_name not in existing_tables:
         table = db.create_table(table_name, schema=NephtysEvent)
     else:
         table = db.open_table(table_name)
@@ -64,9 +85,9 @@ async def main():
                     continue
 
                 bot = item.get("bot", False)
-                title = item.get("title", "")
-                comment = item.get("comment", "")
-                user = item.get("user", "")
+                title = str(item.get("title", "")).strip()
+                comment = str(item.get("comment", "")).strip()
+                user = str(item.get("user", "unknown")).strip() or "unknown"
 
                 if not title or bot:
                     continue
@@ -76,7 +97,7 @@ async def main():
                 event_rows.append(
                     {
                         "source_id": source_id,
-                        "timestamp": item.get("timestamp", timestamp),
+                        "timestamp": _normalize_timestamp_ms(item.get("timestamp", timestamp)),
                         "text": text_content,
                     }
                 )
