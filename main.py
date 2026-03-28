@@ -24,11 +24,12 @@ class NephtysEvent(LanceModel):
     text: str = model.SourceField() 
     vector: EmbeddingVector = model.VectorField()
 
+
 async def main():
     db = lancedb.connect("./data/nephtys_lancedb")
-    
+
     table_name = "live_streams"
-    if table_name not in db.table_names():
+    if table_name not in db.list_tables():
         table = db.create_table(table_name, schema=NephtysEvent)
     else:
         table = db.open_table(table_name)
@@ -36,43 +37,71 @@ async def main():
     nc = await nats.connect("nats://localhost:4222")
     js = nc.jetstream()
     
-    stream_topic = "nephtys.stream.>" 
+    stream_topic = "nephtys.stream.>"
 
     async def message_handler(msg):
         try:
             data = json.loads(msg.data.decode())
-            
             source_id = data.get("source", "unknown")
             timestamp = data.get("timestamp", 0)
-            payload = data.get("payload", {})
-            
-            title = payload.get("title", "")
-            comment = payload.get("comment", "")
-            user = payload.get("user", "")
-            bot = payload.get("bot", False)
-            
-            if not title or bot:
+            event_type = data.get("type", "")
+            payload = data.get("payload", [])
+
+            # Support both batched payloads and single events.
+            if event_type.endswith("_batch") and isinstance(payload, list):
+                payloads = payload
+            elif isinstance(payload, dict):
+                payloads = [payload]
+            else:
                 await msg.ack()
                 return
 
-            text_content = f"L'utente {user} ha modificato la pagina '{title}'. Commento: {comment}"
-            vector = model.compute_source_embeddings(text_content)[0]
+            texts_to_embed = []
+            event_rows = []
 
-            record = NephtysEvent(
-                source_id=source_id,
-                timestamp=timestamp,
-                text=text_content,
-                vector=vector,
-            )
-            
-            table.add([record])
-            
-            logger.info(f"[{source_id}] {text_content[:60]}...")
-            
+            for item in payloads:
+                if not isinstance(item, dict):
+                    continue
+
+                bot = item.get("bot", False)
+                title = item.get("title", "")
+                comment = item.get("comment", "")
+                user = item.get("user", "")
+
+                if not title or bot:
+                    continue
+
+                text_content = f"L'utente {user} ha modificato la pagina '{title}'. Commento: {comment}"
+                texts_to_embed.append(text_content)
+                event_rows.append(
+                    {
+                        "source_id": source_id,
+                        "timestamp": item.get("timestamp", timestamp),
+                        "text": text_content,
+                    }
+                )
+
+            if event_rows:
+                vectors = model.compute_source_embeddings(texts_to_embed)
+                records_to_insert = []
+
+                for row, vector in zip(event_rows, vectors):
+                    records_to_insert.append(
+                        NephtysEvent(
+                            source_id=row["source_id"],
+                            timestamp=row["timestamp"],
+                            text=row["text"],
+                            vector=vector,
+                        )
+                    )
+
+                table.add(records_to_insert)
+                logger.info("Saved %d records to LanceDB", len(records_to_insert))
+
             await msg.ack()
-            
+
         except Exception as e:
-            logger.error(e)
+            logger.exception("message_handler failed: %s", e)
 
     sub = await js.subscribe(stream_topic, cb=message_handler)
 
