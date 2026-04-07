@@ -1,7 +1,7 @@
 [project]
 name = "lancedb-nephtys-bridge"
 version = "0.1.0"
-description = "Add your description here"
+description = "Real-time semantic search over NATS event streams, powered by LanceDB"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
