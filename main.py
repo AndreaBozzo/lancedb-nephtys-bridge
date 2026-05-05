@@ -1,16 +1,24 @@
+# pyright: reportMissingImports=false, reportMissingModuleSource=false
+
 import asyncio
 import json
 import logging
-import time
 from typing import TYPE_CHECKING
 
 import nats
-import lancedb
-from lancedb.pydantic import LanceModel, Vector
-from lancedb.embeddings import get_registry
+import lancedb  # type: ignore[import-untyped]
+from lancedb.embeddings import get_registry  # type: ignore[import-untyped]
+from lancedb.pydantic import LanceModel, Vector  # type: ignore[import-untyped]
+
+from bridge_utils import iter_event_rows  # type: ignore[import-not-found]
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nephtys-bridge")
+
+DB_PATH = "./data/nephtys_lancedb"
+TABLE_NAME = "live_streams"
+NATS_URL = "nats://localhost:4222"
+STREAM_TOPIC = "nephtys.stream.>"
 
 model = get_registry().get("sentence-transformers").create(name="all-MiniLM-L6-v2")
 
@@ -26,83 +34,25 @@ class NephtysEvent(LanceModel):
     vector: EmbeddingVector = model.VectorField()
 
 
-def _normalize_timestamp_ms(ts_value: int | float | str | None) -> int:
-    """Return a sane epoch timestamp in milliseconds for storage."""
-    now_ms = int(time.time() * 1000)
-    if ts_value is None:
-        return now_ms
-
-    try:
-        ts_int = int(ts_value)
-    except (TypeError, ValueError):
-        return now_ms
-
-    # Guard against empty/invalid values and convert seconds to milliseconds.
-    if ts_int <= 0:
-        return now_ms
-    if ts_int < 10_000_000_000:
-        return ts_int * 1000
-    return ts_int
-
-
 async def main():
-    db = lancedb.connect("./data/nephtys_lancedb")
+    db = lancedb.connect(DB_PATH)
 
-    table_name = "live_streams"
     existing_tables = db.list_tables().tables
-    if table_name not in existing_tables:
-        table = db.create_table(table_name, schema=NephtysEvent)
+    if TABLE_NAME not in existing_tables:
+        table = db.create_table(TABLE_NAME, schema=NephtysEvent)
     else:
-        table = db.open_table(table_name)
+        table = db.open_table(TABLE_NAME)
 
-    nc = await nats.connect("nats://localhost:4222")
+    nc = await nats.connect(NATS_URL)
     js = nc.jetstream()
-    
-    stream_topic = "nephtys.stream.>"
 
     async def message_handler(msg):
         try:
             data = json.loads(msg.data.decode())
-            source_id = data.get("source", "unknown")
-            timestamp = data.get("timestamp", 0)
-            event_type = data.get("type", "")
-            payload = data.get("payload", [])
-
-            # Support both batched payloads and single events.
-            if event_type.endswith("_batch") and isinstance(payload, list):
-                payloads = payload
-            elif isinstance(payload, dict):
-                payloads = [payload]
-            else:
-                await msg.ack()
-                return
-
-            texts_to_embed = []
-            event_rows = []
-
-            for item in payloads:
-                if not isinstance(item, dict):
-                    continue
-
-                bot = item.get("bot", False)
-                title = str(item.get("title", "")).strip()
-                comment = str(item.get("comment", "")).strip()
-                user = str(item.get("user", "unknown")).strip() or "unknown"
-
-                if not title or bot:
-                    continue
-
-                text_content = f"L'utente {user} ha modificato la pagina '{title}'. Commento: {comment}"
-                texts_to_embed.append(text_content)
-                event_rows.append(
-                    {
-                        "source_id": source_id,
-                        "timestamp": _normalize_timestamp_ms(item.get("timestamp", timestamp)),
-                        "text": text_content,
-                    }
-                )
+            event_rows = iter_event_rows(data)
 
             if event_rows:
+                texts_to_embed = [row["text"] for row in event_rows]
                 vectors = model.compute_source_embeddings(texts_to_embed)
                 records_to_insert = []
 
@@ -124,7 +74,7 @@ async def main():
         except Exception as e:
             logger.exception("message_handler failed: %s", e)
 
-    sub = await js.subscribe(stream_topic, cb=message_handler)
+    sub = await js.subscribe(STREAM_TOPIC, cb=message_handler)
 
     try:
         while True:
