@@ -26,15 +26,18 @@ class QueryTests(unittest.TestCase):
         results = _filter_results(
             [
                 {
-                    "text": "source=rss_news | type=article | exchange hack",
+                    "text": "exchange hack",
                     "timestamp": 1_700_000_050_000,
                     "source_id": "rss_news",
+                    "event_type": "article",
+                    "symbol": "BTCUSDT",
                     "_distance": 0.1,
                 },
                 {
-                    "text": "source=wiki | type=recent_changes_batch | user edit",
+                    "text": "user edit",
                     "timestamp": 1_700_000_080_000,
                     "source_id": "wiki",
+                    "event_type": "recent_changes_batch",
                     "_distance": 0.2,
                 },
             ],
@@ -48,12 +51,42 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["source_id"], "rss_news")
 
+    def test_filter_results_applies_symbol_filter(self) -> None:
+        results = _filter_results(
+            [
+                {
+                    "text": "exchange hack",
+                    "timestamp": 1_700_000_050_000,
+                    "source_id": "rss_news",
+                    "event_type": "article",
+                    "symbol": "BTCUSDT",
+                    "_distance": 0.1,
+                },
+                {
+                    "text": "altcoin headline",
+                    "timestamp": 1_700_000_080_000,
+                    "source_id": "rss_news",
+                    "event_type": "article",
+                    "symbol": "ETHUSDT",
+                    "_distance": 0.2,
+                },
+            ],
+            limit=5,
+            content_only=False,
+            symbol_filters=["BTCUSDT"],
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["symbol"], "BTCUSDT")
+
     def test_print_results_json_output_is_machine_readable(self) -> None:
         rows = [
             {
                 "text": "exchange hack",
                 "timestamp": 1_700_000_000_000,
                 "source_id": "rss_news",
+                "event_type": "article",
+                "symbol": "BTCUSDT",
                 "_distance": 0.12,
             }
         ]
@@ -72,6 +105,7 @@ class QueryTests(unittest.TestCase):
         payload = json.loads(buffer.getvalue())
         self.assertEqual(payload[0]["text"], "exchange hack")
         self.assertEqual(payload[0]["source_id"], "rss_news")
+        self.assertEqual(payload[0]["symbol"], "BTCUSDT")
 
     def test_print_results_json_output_includes_event_type(self) -> None:
         rows = [
@@ -79,6 +113,7 @@ class QueryTests(unittest.TestCase):
                 "text": "source=rss_news | type=article | exchange hack",
                 "timestamp": 1_700_000_000_000,
                 "source_id": "rss_news",
+                "event_type": "article",
                 "_distance": 0.12,
             }
         ]

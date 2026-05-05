@@ -2,15 +2,16 @@
 
 import argparse
 import json
-import os
 import time
 from datetime import datetime
 
-import lancedb  # type: ignore[import-untyped]
+from bridge_config import bridge_settings
+from bridge_db import open_table_if_exists
+from bridge_utils import extract_inline_field
 
 MIN_VALID_TS_MS = 946684800000  # 2000-01-01 UTC
-DB_PATH = os.getenv("BRIDGE_DB_PATH", "./data/nephtys_lancedb")
-TABLE_NAME = os.getenv("BRIDGE_TABLE_NAME", "live_streams")
+DB_PATH = bridge_settings().db_path
+TABLE_NAME = bridge_settings().table_name
 
 
 def _is_content_row(text: str) -> bool:
@@ -34,9 +35,10 @@ def query_stream(
     table_name: str = TABLE_NAME,
     source_filters: list[str] | None = None,
     event_type_filters: list[str] | None = None,
+    symbol_filters: list[str] | None = None,
     max_age_seconds: int | None = None,
 ) -> list[dict]:
-    table = _open_table_if_exists(db_path, table_name)
+    table = open_table_if_exists(db_path, table_name)
     if table is None:
         return []
 
@@ -47,16 +49,9 @@ def query_stream(
         content_only=content_only,
         source_filters=source_filters,
         event_type_filters=event_type_filters,
+        symbol_filters=symbol_filters,
         max_age_seconds=max_age_seconds,
     )
-
-
-def _open_table_if_exists(db_path: str, table_name: str):
-    db = lancedb.connect(db_path)
-    existing_tables = set(db.list_tables().tables)
-    if table_name not in existing_tables:
-        return None
-    return db.open_table(table_name)
 
 
 def _filter_results(
@@ -65,6 +60,7 @@ def _filter_results(
     content_only: bool,
     source_filters: list[str] | None = None,
     event_type_filters: list[str] | None = None,
+    symbol_filters: list[str] | None = None,
     max_age_seconds: int | None = None,
 ) -> list[dict]:
     filtered_results = []
@@ -74,6 +70,7 @@ def _filter_results(
     allowed_event_types = {
         event_type.strip() for event_type in event_type_filters or [] if event_type.strip()
     }
+    allowed_symbols = {symbol.strip() for symbol in symbol_filters or [] if symbol.strip()}
     min_timestamp_ms = None
     if max_age_seconds is not None and max_age_seconds >= 0:
         min_timestamp_ms = int(time.time() * 1000) - max_age_seconds * 1000
@@ -82,7 +79,8 @@ def _filter_results(
         text = row.get("text", "")
         timestamp_ms = int(row.get("timestamp", 0) or 0)
         source_id = str(row.get("source_id", "") or "")
-        event_type = _extract_inline_field(text, "type")
+        event_type = str(row.get("event_type") or extract_inline_field(text, "type") or "")
+        symbol = str(row.get("symbol") or extract_inline_field(text, "symbol") or "")
 
         if timestamp_ms < MIN_VALID_TS_MS:
             continue
@@ -93,6 +91,8 @@ def _filter_results(
         if allowed_sources and source_id not in allowed_sources:
             continue
         if allowed_event_types and event_type not in allowed_event_types:
+            continue
+        if allowed_symbols and symbol not in allowed_symbols:
             continue
         if content_only and not _is_content_row(text):
             continue
@@ -114,24 +114,19 @@ def _serialize_result(row: dict) -> dict:
         "datetime": datetime.fromtimestamp(timestamp_ms / 1000).strftime("%Y-%m-%d %H:%M:%S"),
         "score": row.get("_distance"),
         "source_id": row.get("source_id", "unknown"),
-        "event_type": _extract_inline_field(text, "type"),
+        "event_type": row.get("event_type") or extract_inline_field(text, "type"),
+        "symbol": row.get("symbol") or extract_inline_field(text, "symbol"),
         "text": text,
     }
 
 
-def _extract_inline_field(text: str, field: str) -> str | None:
-    for segment in text.split("|"):
-        token = segment.strip()
-        prefix = f"{field}="
-        if token.startswith(prefix):
-            value = token[len(prefix) :].strip()
-            return value or None
-    return None
+def serialize_results(results: list[dict]) -> list[dict]:
+    return [_serialize_result(row) for row in results]
 
 
 def print_results(results: list[dict], query_text: str, content_only: bool, json_output: bool) -> None:
     if json_output:
-        print(json.dumps([_serialize_result(row) for row in results], ensure_ascii=False))
+        print(json.dumps(serialize_results(results), ensure_ascii=False))
         return
 
     print(f"Ricerca per: '{query_text}'")
@@ -149,6 +144,8 @@ def print_results(results: list[dict], query_text: str, content_only: bool, json
         print(f"Fonte: {serialized['source_id']}")
         if serialized["event_type"]:
             print(f"Tipo: {serialized['event_type']}")
+        if serialized["symbol"]:
+            print(f"Simbolo: {serialized['symbol']}")
         print(f"Testo: {serialized['text']}")
         print("-" * 40)
 
@@ -163,6 +160,7 @@ if __name__ == "__main__":
     parser.add_argument("--table", default=TABLE_NAME)
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument("--event-type", action="append", default=[])
+    parser.add_argument("--symbol", action="append", default=[])
     parser.add_argument("--max-age-seconds", type=int)
 
     args = parser.parse_args()
@@ -174,6 +172,7 @@ if __name__ == "__main__":
         table_name=args.table,
         source_filters=args.source,
         event_type_filters=args.event_type,
+        symbol_filters=args.symbol,
         max_age_seconds=args.max_age_seconds,
     )
     print_results(results, args.query, content_only=not args.all_namespaces, json_output=args.json)

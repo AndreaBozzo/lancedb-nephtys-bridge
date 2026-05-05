@@ -27,6 +27,8 @@ class BridgeUtilsTests(unittest.TestCase):
         self.assertIn("Bitcoin", rows[0]["text"])
         self.assertIn("source=wiki", rows[0]["text"])
         self.assertIn("type=recent_changes_batch", rows[0]["text"])
+        self.assertEqual(rows[0]["event_type"], "recent_changes_batch")
+        self.assertIsNone(rows[0]["symbol"])
 
     def test_extract_text_content_supports_generic_news_payloads(self) -> None:
         text = extract_text_content(
@@ -55,6 +57,23 @@ class BridgeUtilsTests(unittest.TestCase):
             text,
             "source=binance_btc_trade | type=trade | symbol=BTCUSDT | price=68000 volume=2.0 imbalance=0.4",
         )
+
+    def test_upgrade_legacy_row_extracts_inline_metadata(self) -> None:
+        from bridge_utils import upgrade_legacy_row
+
+        upgraded = upgrade_legacy_row(
+            {
+                "source_id": "",
+                "timestamp": 1_700_000_000_000,
+                "text": "source=wiki_live_edits | type=message_batch | symbol=BTCUSDT | headline",
+                "vector": [0.0, 1.0],
+            }
+        )
+
+        assert upgraded is not None
+        self.assertEqual(upgraded["source_id"], "wiki_live_edits")
+        self.assertEqual(upgraded["event_type"], "message_batch")
+        self.assertEqual(upgraded["symbol"], "BTCUSDT")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,16 @@ TEXT_FIELDS = (
 )
 
 
+def extract_inline_field(text: str, field: str) -> str | None:
+    for segment in text.split("|"):
+        token = segment.strip()
+        prefix = f"{field}="
+        if token.startswith(prefix):
+            value = token[len(prefix) :].strip()
+            return value or None
+    return None
+
+
 def inline_metadata(source_id: str, event_type: str, symbol: str | None = None) -> str:
     parts = []
     if source_id:
@@ -62,10 +72,13 @@ def iter_event_rows(stream_event: dict[str, Any]) -> list[dict[str, Any]]:
         text = extract_text_content(source_id, event_type, item)
         if not text:
             continue
+        symbol = extract_symbol(item)
 
         rows.append(
             {
                 "source_id": source_id,
+                "event_type": event_type,
+                "symbol": symbol,
                 "timestamp": normalize_timestamp_ms(item.get("timestamp", timestamp)),
                 "text": text,
             }
@@ -90,7 +103,7 @@ def extract_text_content(source_id: str, event_type: str, item: dict[str, Any]) 
         if value and value not in text_fragments:
             text_fragments.append(value)
 
-    symbol = _clean_str(item.get("symbol")) or _clean_str(item.get("s"))
+    symbol = extract_symbol(item)
     if text_fragments:
         prefix = inline_metadata(source_id, event_type, symbol or None)
         body = " ".join(text_fragments)
@@ -115,6 +128,33 @@ def extract_text_content(source_id: str, event_type: str, item: dict[str, Any]) 
         return f"{prefix} | {suffix}" if suffix else prefix
 
     return None
+
+
+def extract_symbol(item: dict[str, Any]) -> str | None:
+    symbol = _clean_str(item.get("symbol")) or _clean_str(item.get("s"))
+    return symbol or None
+
+
+def upgrade_legacy_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    text = _clean_str(row.get("text"))
+    if not text:
+        return None
+
+    source_id = _clean_str(row.get("source_id")) or extract_inline_field(text, "source") or "unknown"
+    event_type = _clean_str(row.get("event_type")) or extract_inline_field(text, "type") or "event"
+    symbol = _clean_str(row.get("symbol")) or extract_inline_field(text, "symbol") or None
+    timestamp = normalize_timestamp_ms(row.get("timestamp"))
+    upgraded = {
+        "source_id": source_id,
+        "event_type": event_type,
+        "symbol": symbol,
+        "timestamp": timestamp,
+        "text": text,
+    }
+    vector = row.get("vector")
+    if vector is not None:
+        upgraded["vector"] = vector
+    return upgraded
 
 
 def _clean_str(value: Any) -> str:
