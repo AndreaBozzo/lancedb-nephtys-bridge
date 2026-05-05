@@ -26,6 +26,12 @@ uv run main.py
 
 Connects to `nats://localhost:4222`, subscribes to `nephtys.stream.>`, and writes incoming events to `./data/nephtys_lancedb`.
 
+The bridge runtime is configurable with:
+- `BRIDGE_DB_PATH`
+- `BRIDGE_TABLE_NAME`
+- `BRIDGE_NATS_URL`
+- `BRIDGE_STREAM_TOPIC`
+
 The bridge now supports:
 - Wikipedia-style batched payloads.
 - Generic news/article payloads with fields like `headline`, `title`, `summary`, `description`, `text`, or `message`.
@@ -67,9 +73,17 @@ make e2e-wiki-sidecar
 Important defaults:
 - `NEPHTYS_REPO=/home/andrea/Nephtys`
 - `NEPHTYS_ADMIN_TOKEN=bridge-local-admin`
-- `BRIDGE_DB_PATH=./data/e2e_nephtys_lancedb`
+- `BRIDGE_DB_PATH=./data/e2e_runs/$RUN_ID`
+
+Operational behavior:
+- Reuses an already-running Nephtys on `:3002` when present.
+- Starts the bridge with the repo virtualenv Python instead of `uv run` to avoid orphan wrapper processes.
+- Uses a run-scoped LanceDB path by default so repeated e2e sessions do not corrupt each other.
+- Stops the bridge before the final semantic query so verification happens against a stable on-disk table.
 
 Override them with environment variables if your local paths or ports differ.
+
+See [E2E_FINDINGS.md](E2E_FINDINGS.md) for the latest live-session findings and the next recommended evolution steps.
 
 ### Stream configuration
 
