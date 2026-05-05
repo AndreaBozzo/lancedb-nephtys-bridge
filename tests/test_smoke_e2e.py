@@ -9,7 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@unittest.skipUnless(os.getenv("RUN_BRIDGE_E2E_SMOKE") == "1", "Set RUN_BRIDGE_E2E_SMOKE=1 to run")
+@unittest.skipUnless(
+    os.getenv("RUN_BRIDGE_E2E_SMOKE") == "1", "Set RUN_BRIDGE_E2E_SMOKE=1 to run"
+)
 class BridgeSmokeE2ETests(unittest.TestCase):
     def test_wiki_sidecar_script_returns_non_empty_query_output(self) -> None:
         env = os.environ.copy()
@@ -30,7 +32,11 @@ class BridgeSmokeE2ETests(unittest.TestCase):
         self.assertIn("E2E session completed successfully.", completed.stdout)
 
         json_line = next(
-            (line for line in completed.stdout.splitlines() if line.strip().startswith("[{")),
+            (
+                line
+                for line in completed.stdout.splitlines()
+                if line.strip().startswith("[{")
+            ),
             "[]",
         )
         payload = json.loads(json_line)

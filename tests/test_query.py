@@ -4,25 +4,41 @@ import json
 import unittest
 from unittest.mock import patch
 
-from query import _filter_results, print_results
+from nephtys_bridge.query import _filter_results, print_results
 
 
 class QueryTests(unittest.TestCase):
     def test_filter_results_deduplicates_and_applies_limit(self) -> None:
         results = _filter_results(
             [
-                {"text": "hack headline", "timestamp": 1_700_000_000_000, "_distance": 0.1},
-                {"text": "hack headline", "timestamp": 1_700_000_000_100, "_distance": 0.2},
-                {"text": "second headline", "timestamp": 1_700_000_000_200, "_distance": 0.3},
+                {
+                    "text": "hack headline",
+                    "timestamp": 1_700_000_000_000,
+                    "_distance": 0.1,
+                },
+                {
+                    "text": "hack headline",
+                    "timestamp": 1_700_000_000_100,
+                    "_distance": 0.2,
+                },
+                {
+                    "text": "second headline",
+                    "timestamp": 1_700_000_000_200,
+                    "_distance": 0.3,
+                },
             ],
             limit=2,
             content_only=False,
         )
 
-        self.assertEqual([row["text"] for row in results], ["hack headline", "second headline"])
+        self.assertEqual(
+            [row["text"] for row in results], ["hack headline", "second headline"]
+        )
 
-    @patch("query.time.time", return_value=1_700_000_100)
-    def test_filter_results_applies_source_event_and_recency_filters(self, _time_mock) -> None:
+    @patch("nephtys_bridge.query.time.time", return_value=1_700_000_100)
+    def test_filter_results_applies_source_event_and_recency_filters(
+        self, _time_mock
+    ) -> None:
         results = _filter_results(
             [
                 {

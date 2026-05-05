@@ -7,12 +7,14 @@ Consumes JSON events from a NATS JetStream topic, extracts reusable text summari
 The bridge now persists `source_id`, `event_type`, and `symbol` as first-class Lance columns, exposes a small long-running HTTP query service, and includes maintenance tooling for e2e run retention plus Lance file compaction.
 
 Scaffold overview:
-- `bridge_config.py`: central environment-driven settings
-- `bridge_db.py`: lazy LanceDB and embedding runtime helpers
-- `main.py`: ingest process
-- `query.py`: CLI query path
-- `service.py`: resident HTTP query service
-- `maintenance.py`: retention and compaction tasks
+- `nephtys_bridge/`: internal package with the actual runtime modules
+- `nephtys_bridge/config.py`: central environment-driven settings
+- `nephtys_bridge/db.py`: lazy LanceDB and embedding runtime helpers
+- `nephtys_bridge/ingest.py`: ingestion runtime
+- `nephtys_bridge/query.py`: query/filter/serialization logic
+- `nephtys_bridge/service.py`: resident HTTP query service
+- `nephtys_bridge/maintenance.py`: retention and compaction tasks
+- top-level `main.py`, `query.py`, `service.py`, and `maintenance.py`: thin entrypoints for local CLI compatibility
 
 ## Requirements
 
@@ -95,8 +97,7 @@ Supported endpoints:
 
 Mercury's `executor/news_risk_agent.py` can use this bridge as an out-of-band semantic news source. The intended workflow is:
 
-1. Run `uv run main.py` here to populate `./data/nephtys_lancedb`.
-2. Prefer `make run` or a supervised process for ingestion.
+1. Run `make run` here, or supervise the same entrypoint, to populate `./data/nephtys_lancedb`.
 2. Prefer running `make service` here and point Mercury at `NEWS_RISK_BRIDGE_SERVICE_URL=http://127.0.0.1:8787`.
 3. Mercury can still fall back to `query.py` directly when no service URL is configured.
 4. Use the returned texts to lower risk limits without putting an LLM in the trade execution path.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from bridge_utils import extract_text_content, iter_event_rows
+from nephtys_bridge.utils import extract_text_content, iter_event_rows
 
 
 class BridgeUtilsTests(unittest.TestCase):
@@ -50,7 +50,12 @@ class BridgeUtilsTests(unittest.TestCase):
         text = extract_text_content(
             "binance_btc_trade",
             "trade",
-            {"symbol": "BTCUSDT", "price": "68000", "volume": "2.0", "imbalance": "0.4"},
+            {
+                "symbol": "BTCUSDT",
+                "price": "68000",
+                "volume": "2.0",
+                "imbalance": "0.4",
+            },
         )
 
         self.assertEqual(
@@ -59,7 +64,7 @@ class BridgeUtilsTests(unittest.TestCase):
         )
 
     def test_upgrade_legacy_row_extracts_inline_metadata(self) -> None:
-        from bridge_utils import upgrade_legacy_row
+        from nephtys_bridge.utils import upgrade_legacy_row
 
         upgraded = upgrade_legacy_row(
             {

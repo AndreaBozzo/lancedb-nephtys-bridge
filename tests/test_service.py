@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from service import query_response_from_params
+from nephtys_bridge.service import query_response_from_params
 
 
 class ServiceTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(payload["error"], "missing query parameter 'q'")
 
-    @patch("service.query_stream")
+    @patch("nephtys_bridge.service.query_stream")
     def test_query_response_passes_filters_through(self, query_stream_mock) -> None:
         query_stream_mock.return_value = [
             {

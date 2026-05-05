@@ -10,3 +10,13 @@ dependencies = [
     "pydantic>=2.12.5",
     "sentence-transformers>=5.3.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+]
+
+[tool.ruff]
+line-length = 88
+lint.select = ["E", "F", "W", "C90"]
+lint.ignore = ["E501"]

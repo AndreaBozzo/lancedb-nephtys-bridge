@@ -1,0 +1,16 @@
+{
+  "include": [
+    "*.py",
+    "nephtys_bridge",
+    "tests"
+  ],
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "."
+      ]
+    }
+  ],
+  "reportMissingModuleSource": "none"
+}

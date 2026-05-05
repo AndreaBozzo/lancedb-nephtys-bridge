@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from maintenance import optimize_table_storage, prune_e2e_runs
+from nephtys_bridge.maintenance import optimize_table_storage, prune_e2e_runs
 
 
 class MaintenanceTests(unittest.TestCase):
@@ -32,8 +32,10 @@ class MaintenanceTests(unittest.TestCase):
             self.assertTrue(keep.exists())
             self.assertFalse(delete.exists())
 
-    @patch("maintenance.open_table_if_exists")
-    def test_optimize_table_storage_calls_compaction_and_cleanup(self, open_table_mock) -> None:
+    @patch("nephtys_bridge.maintenance.open_table_if_exists")
+    def test_optimize_table_storage_calls_compaction_and_cleanup(
+        self, open_table_mock
+    ) -> None:
         class FakeTable:
             def compact_files(self):
                 return "compacted"
@@ -45,7 +47,9 @@ class MaintenanceTests(unittest.TestCase):
         table = FakeTable()
         open_table_mock.return_value = table
 
-        result = optimize_table_storage("/tmp/db", "live_streams", cleanup_older_than_days=2)
+        result = optimize_table_storage(
+            "/tmp/db", "live_streams", cleanup_older_than_days=2
+        )
 
         self.assertTrue(result["table_exists"])
         self.assertEqual(result["compaction"], "compacted")
