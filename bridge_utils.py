@@ -16,6 +16,17 @@ TEXT_FIELDS = (
 )
 
 
+def inline_metadata(source_id: str, event_type: str, symbol: str | None = None) -> str:
+    parts = []
+    if source_id:
+        parts.append(f"source={source_id}")
+    if event_type:
+        parts.append(f"type={event_type}")
+    if symbol:
+        parts.append(f"symbol={symbol}")
+    return " | ".join(parts)
+
+
 def normalize_timestamp_ms(ts_value: int | float | str | None) -> int:
     now_ms = int(time.time() * 1000)
     if ts_value is None:
@@ -69,7 +80,9 @@ def extract_text_content(source_id: str, event_type: str, item: dict[str, Any]) 
     user = _clean_str(item.get("user")) or "unknown"
     bot = bool(item.get("bot", False))
     if title and not bot:
-        return f"L'utente {user} ha modificato la pagina '{title}'. Commento: {comment or 'N/A'}"
+        prefix = inline_metadata(source_id, event_type)
+        body = f"L'utente {user} ha modificato la pagina '{title}'. Commento: {comment or 'N/A'}"
+        return f"{prefix} | {body}" if prefix else body
 
     text_fragments: list[str] = []
     for field in TEXT_FIELDS:
@@ -79,14 +92,7 @@ def extract_text_content(source_id: str, event_type: str, item: dict[str, Any]) 
 
     symbol = _clean_str(item.get("symbol")) or _clean_str(item.get("s"))
     if text_fragments:
-        prefix_parts = []
-        if source_id:
-            prefix_parts.append(f"source={source_id}")
-        if event_type:
-            prefix_parts.append(f"type={event_type}")
-        if symbol:
-            prefix_parts.append(f"symbol={symbol}")
-        prefix = " | ".join(prefix_parts)
+        prefix = inline_metadata(source_id, event_type, symbol or None)
         body = " ".join(text_fragments)
         return f"{prefix} | {body}" if prefix else body
 
@@ -95,7 +101,8 @@ def extract_text_content(source_id: str, event_type: str, item: dict[str, Any]) 
     imbalance = _clean_str(item.get("imbalance"))
     spread = _clean_str(item.get("spread"))
     if symbol and any((price, volume, imbalance, spread)):
-        fragments = [f"type={event_type}", f"symbol={symbol}"]
+        prefix = inline_metadata(source_id, event_type, symbol)
+        fragments = []
         if price:
             fragments.append(f"price={price}")
         if volume:
@@ -104,7 +111,8 @@ def extract_text_content(source_id: str, event_type: str, item: dict[str, Any]) 
             fragments.append(f"imbalance={imbalance}")
         if spread:
             fragments.append(f"spread={spread}")
-        return " ".join(fragments)
+        suffix = " ".join(fragments)
+        return f"{prefix} | {suffix}" if suffix else prefix
 
     return None
 

@@ -25,6 +25,8 @@ class BridgeUtilsTests(unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         self.assertIn("Bitcoin", rows[0]["text"])
+        self.assertIn("source=wiki", rows[0]["text"])
+        self.assertIn("type=recent_changes_batch", rows[0]["text"])
 
     def test_extract_text_content_supports_generic_news_payloads(self) -> None:
         text = extract_text_content(
@@ -51,7 +53,7 @@ class BridgeUtilsTests(unittest.TestCase):
 
         self.assertEqual(
             text,
-            "type=trade symbol=BTCUSDT price=68000 volume=2.0 imbalance=0.4",
+            "source=binance_btc_trade | type=trade | symbol=BTCUSDT | price=68000 volume=2.0 imbalance=0.4",
         )
 
 

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 from typing import TYPE_CHECKING
 
 import nats
@@ -15,10 +16,10 @@ from bridge_utils import iter_event_rows  # type: ignore[import-not-found]
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nephtys-bridge")
 
-DB_PATH = "./data/nephtys_lancedb"
-TABLE_NAME = "live_streams"
-NATS_URL = "nats://localhost:4222"
-STREAM_TOPIC = "nephtys.stream.>"
+DB_PATH = os.getenv("BRIDGE_DB_PATH", "./data/nephtys_lancedb")
+TABLE_NAME = os.getenv("BRIDGE_TABLE_NAME", "live_streams")
+NATS_URL = os.getenv("BRIDGE_NATS_URL", "nats://localhost:4222")
+STREAM_TOPIC = os.getenv("BRIDGE_STREAM_TOPIC", "nephtys.stream.>")
 
 model = get_registry().get("sentence-transformers").create(name="all-MiniLM-L6-v2")
 
@@ -35,6 +36,7 @@ class NephtysEvent(LanceModel):
 
 
 async def main():
+    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     db = lancedb.connect(DB_PATH)
 
     existing_tables = db.list_tables().tables
